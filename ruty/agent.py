@@ -60,6 +60,8 @@ def create_agent(model_name: str = None, checkpointer = None):
     # Define the assistant node (reasoning)
     def assistant(state: AgentState):
         """The reasoning node - processes messages and decides actions"""
+        from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+        
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         
         # Add local context if available
@@ -69,8 +71,14 @@ def create_agent(model_name: str = None, checkpointer = None):
                 "content": f"[Local Context]\n{state['local_context']}"
             })
         
-        # Add conversation history
-        messages.extend(state["messages"])
+        # Aggressive trimming: keep only last 6 messages to stay well under 10k tokens
+        # This typically covers: recent HumanMessage + current ReAct loop messages
+        MAX_MESSAGES = 6
+        conversation = state["messages"]
+        if len(conversation) > MAX_MESSAGES:
+            conversation = conversation[-MAX_MESSAGES:]
+        
+        messages.extend(conversation)
         
         # Get LLM response
         response = llm.invoke(messages)

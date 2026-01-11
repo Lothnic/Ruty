@@ -16,7 +16,6 @@ from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QTimer, QThread, pyqtSignal
 from pynput import keyboard
-from langgraph.checkpoint.sqlite import SqliteSaver
 
 # IPC Configuration
 SOCKET_PATH = f"/tmp/ruty_{os.getuid()}.sock"
@@ -80,9 +79,6 @@ from ruty.agent import create_agent
 from ruty.gui import create_chat_window
 
 
-# Paths
-SCRIPT_DIR = Path(__file__).parent
-DB_PATH = str((SCRIPT_DIR / "ruty.sqlite").resolve())
 
 # Global instances
 app = None
@@ -130,15 +126,12 @@ def main():
     # Start IPC server (needs app to exist)
     run_ipc_server()
     
-    # Initialize agent with SQLite persistence
-    print(f"⚡ Connecting to database: {DB_PATH}")
-    # Store context manager and enter it
-    app.checkpointer_cm = SqliteSaver.from_conn_string(DB_PATH)
-    checkpointer = app.checkpointer_cm.__enter__()
-    agent = create_agent(checkpointer=checkpointer)
+    # Initialize agent with in-memory storage (no persistent files)
+    print("⚡ Initializing agent (in-memory)...")
+    agent = create_agent()  # Uses default MemorySaver
     
-    # Create persistent session config
-    session_id = f"tray_session_{datetime.now().strftime('%Y%m%d')}"
+    # Create session config
+    session_id = f"tray_session_{datetime.now().strftime('%H%M%S')}"
     config = {"configurable": {"thread_id": session_id}}
     
     # Create chat window

@@ -2,6 +2,10 @@
 import os
 import requests
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Ensure .env is loaded before accessing environment variables
+load_dotenv()
 
 SUPERMEMORY_API_KEY = os.getenv("SUPERMEMORY_API_KEY")
 
