@@ -3,6 +3,8 @@ import requests
 from openai import OpenAI
 import dotenv
 import hashlib
+import uuid
+from datetime import datetime
 from pathlib import Path
 
 dotenv.load_dotenv()
@@ -18,6 +20,54 @@ SUPPORTED_EXTENSIONS = TEXT_EXTENSIONS | BINARY_EXTENSIONS
 
 # CONFIG
 model_name = "moonshotai/kimi-k2-instruct-0905"
+
+# Session management
+current_session_id = None
+conversation_history = []  # Accumulate messages during session
+
+def get_session_id():
+    """Get or create a session ID for this chat session"""
+    global current_session_id
+    if current_session_id is None:
+        current_session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+    return current_session_id
+
+def add_to_history(user_message: str, assistant_response: str):
+    """Add an exchange to the conversation history (in-memory)"""
+    conversation_history.append({
+        "user": user_message,
+        "assistant": assistant_response,
+        "timestamp": datetime.now().isoformat()
+    })
+
+def save_conversation_history():
+    """Save the entire conversation history to Supermemory (call on exit)"""
+    global conversation_history
+    if not conversation_history:
+        return None
+    
+    session_id = get_session_id()
+    
+    # Build full conversation content
+    lines = [f"[Conversation Session - {session_id}]\n"]
+    for i, msg in enumerate(conversation_history, 1):
+        lines.append(f"--- Exchange {i} ({msg['timestamp']}) ---")
+        lines.append(f"User: {msg['user']}")
+        lines.append(f"Assistant: {msg['assistant']}\n")
+    
+    content = "\n".join(lines)
+    
+    # Create a summary title from first message
+    first_msg = conversation_history[0]['user'][:50]
+    title = f"Chat: {first_msg}... ({len(conversation_history)} exchanges)"
+    
+    result = add_memory(content, custom_id=session_id, title=title)
+    
+    if result:
+        print(f"✓ Saved {len(conversation_history)} exchanges to memory")
+        conversation_history = []  # Clear after saving
+    
+    return result
 
 def get_headers():
     """Get common headers for Supermemory API"""
@@ -295,6 +345,7 @@ def interactive_chat():
             prompt = f"You [{context_path.name if context_path else 'no context'}]: " if context_path else "You: "
             user_input = input(prompt).strip()
         except (KeyboardInterrupt, EOFError):
+            save_conversation_history()  # Save on Ctrl+C
             print("\nGoodbye!")
             break
         
@@ -307,6 +358,7 @@ def interactive_chat():
             arg = parts[1] if len(parts) > 1 else ""
             
             if cmd == "/quit" or cmd == "/exit":
+                save_conversation_history()  # Save on exit
                 print("Goodbye!")
                 break
             elif cmd == "/clear":
@@ -371,6 +423,9 @@ def interactive_chat():
         try:
             response = chat(user_input, extra_context=local_context)
             print(f"\nAssistant: {response}\n")
+            
+            # Add to history (will be saved on exit)
+            add_to_history(user_input, response)
         except Exception as e:
             print(f"\nError: {e}\n")
 
