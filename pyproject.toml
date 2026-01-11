@@ -20,7 +20,7 @@ dependencies = [
     "openai>=1.0.0",
     "supermemory>=3.4.0",
     
-    # System tray
-    "pillow>=12.1.0",
-    "pystray>=0.19.5",
+    # Desktop app
+    "PyQt5>=5.15.0",
+    "pynput>=1.7.0",
 ]
