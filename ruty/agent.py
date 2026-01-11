@@ -16,7 +16,7 @@ SYSTEM_PROMPT = """You are Ruty, a personal AI assistant with access to a knowle
 
 You have the following capabilities through your tools:
 - **search_memory**: Search your personal knowledge base for relevant information
-- **add_memory**: Save new information to your knowledge base  
+- **add_memory**: Save ONLY when user EXPLICITLY asks (e.g. "remember this", "save to memory"). DO NOT auto-save preferences.
 - **sync_folder**: Upload all files from a folder to your knowledge base
 - **upload_file**: Upload a single file to your knowledge base
 - **load_local_context**: Temporarily load local files for the current conversation
@@ -25,18 +25,20 @@ You have the following capabilities through your tools:
 
 Guidelines:
 1. When the user asks a question, FIRST search your memory to find relevant context
-2. When the user mentions files or wants to save information, use the appropriate tool
-3. Be conversational and helpful - you're a personal assistant
-4. If you don't find relevant information in memory, say so and offer to help anyway
-5. Keep responses concise but informative
+2. Use add_memory ONLY if user explicitly asks you to remember something
+3. Preferences and facts are auto-saved on exit - you don't need to save them manually
+4. Be conversational and helpful - you're a personal assistant
+5. If you don't find relevant information in memory, say so and offer to help anyway
+6. Keep responses concise but informative
 """
 
 
-def create_agent(model_name: str = None):
+def create_agent(model_name: str = None, checkpointer = None):
     """Build and return the LangGraph agent.
     
     Args:
         model_name: Override the default model
+        checkpointer: Optional persistence layer (defaults to in-memory)
         
     Returns:
         Compiled LangGraph agent with checkpointing
@@ -90,9 +92,11 @@ def create_agent(model_name: str = None):
     )
     graph.add_edge("tools", "assistant")  # Loop back after tool execution
     
-    # Compile with memory checkpointer for conversation persistence
-    memory = MemorySaver()
-    return graph.compile(checkpointer=memory)
+    # Compile with checkpointer
+    if checkpointer is None:
+        checkpointer = MemorySaver()
+        
+    return graph.compile(checkpointer=checkpointer)
 
 
 # Singleton agent instance
