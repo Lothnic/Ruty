@@ -1,8 +1,61 @@
+# Environment & Secrets
 .env
-.venv/
-__pycache__/
+.env.local
+.env.*.local
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/
+
+# Node / Frontend
+node_modules/
+dist/
+dist-isolated/
+
+# System / IDE
+.DS_Store
+.DS_Store?
+._*
+.blackbox/
+.blackboxcli/
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# Project specific
 data/
 data/personal.md

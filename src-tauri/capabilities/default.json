@@ -1,0 +1,24 @@
+{
+    "$schema": "../gen/schemas/capabilities.json",
+    "identifier": "default",
+    "description": "Default permissions for Ruty",
+    "windows": [
+        "main"
+    ],
+    "permissions": [
+        "core:default",
+        "shell:default",
+        {
+            "identifier": "shell:allow-execute",
+            "allow": [
+                {
+                    "args": [],
+                    "name": "binaries/ruty-backend",
+                    "sidecar": true
+                }
+            ]
+        },
+        "global-shortcut:default",
+        "tray:default"
+    ]
+}

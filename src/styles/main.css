@@ -1,0 +1,300 @@
+/**
+ * Ruty Spotlight-Style Interface
+ * Glassmorphism design with smooth animations
+ */
+
+:root {
+  /* Dark theme colors */
+  --bg-primary: rgba(20, 20, 25, 0.92);
+  --bg-secondary: rgba(35, 35, 45, 0.8);
+  --bg-hover: rgba(55, 55, 70, 0.6);
+
+  /* Accent colors */
+  --accent-primary: #8b5cf6;
+  --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  --accent-glow: 0 0 20px rgba(139, 92, 246, 0.3);
+
+  /* Text colors */
+  --text-primary: #f5f5f7;
+  --text-secondary: rgba(245, 245, 247, 0.6);
+  --text-muted: rgba(245, 245, 247, 0.4);
+
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-active: rgba(139, 92, 246, 0.5);
+
+  /* Shadows */
+  --shadow-large: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 40px rgba(139, 92, 246, 0.15);
+
+  /* Sizing */
+  --window-width: 600px;
+  --border-radius: 16px;
+  --input-height: 56px;
+}
+
+/* Main container - fills the body */
+.spotlight-container {
+  width: 100%;
+  max-width: 700px;
+  /* Constrain visual width */
+  margin: 0 auto;
+  /* Center in the wider 900px window */
+  min-height: 100vh;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 40px;
+  /* Essential! Prevents shadows/borders from being clipped by the window edges */
+}
+
+/* Common Card Style */
+.card-base {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-large);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+/* Input section */
+.input-wrapper {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  height: var(--input-height);
+  width: 100%;
+  /* Apply card styles */
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-large);
+  backdrop-filter: blur(20px);
+}
+
+.input-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 12px;
+  color: var(--text-muted);
+}
+
+#input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 1.125rem;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+#input::placeholder {
+  color: var(--text-muted);
+}
+
+.input-shortcut {
+  display: flex;
+  gap: 4px;
+  opacity: 0.5;
+}
+
+.input-shortcut kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-family: inherit;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+/* Tools indicator */
+.tools-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  animation: slideDown 0.2s ease;
+
+  /* Card style */
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-large);
+}
+
+.tools-icon {
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Response section */
+.response {
+  /* Separate card style */
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow-large);
+  backdrop-filter: blur(20px);
+  overflow: hidden;
+  animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.response-content {
+  padding: 16px;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* Globally hide scrollbars visually but allow scrolling */
+::-webkit-scrollbar {
+  display: none;
+}
+
+body,
+html {
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  height: 100%;
+  overflow-y: hidden;
+  /* Prevent body scroll */
+  background: transparent;
+  /* Essential for floating cards */
+}
+
+/* Context badge */
+.context-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+
+  /* Small card style */
+  background: var(--bg-secondary);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  border-radius: 12px;
+  box-shadow: var(--shadow-large);
+
+  font-size: 0.8125rem;
+  color: #22c55e;
+  width: fit-content;
+  margin-top: -4px;
+  /* Slightly tuck */
+}
+
+.context-clear {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.context-clear:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Hidden utility */
+.hidden {
+  display: none !important;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Loading state */
+.loading .response-content::after {
+  content: '▊';
+  animation: blink 0.8s infinite;
+}
+
+@keyframes blink {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Focus state */
+.input-wrapper:focus-within {
+  border-color: var(--border-active);
+  box-shadow: var(--shadow-large), var(--accent-glow);
+}
+
+/* Loading rotation for input icon */
+@keyframes rotate {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.rotating {
+  animation: rotate 1s linear infinite;
+  color: var(--accent-primary) !important;
+}

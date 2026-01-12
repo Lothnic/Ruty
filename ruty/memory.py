@@ -37,7 +37,8 @@ def list_memories():
             break
         
         data = response.json()
-        memories = data.get("documents", [])
+        # API returns 'memories' not 'documents'
+        memories = data.get("memories", [])
         if not memories:
             break
         
@@ -108,11 +109,18 @@ def upload_file_to_supermemory(file_path: Path, custom_id: str = None):
 
 
 def search_supermemory(query: str, limit: int = 5):
-    """Search for relevant context in Supermemory"""
+    """Search for relevant context in Supermemory using v4 hybrid mode.
+    
+    Searches both memories and document chunks for best results.
+    """
     response = requests.post(
-        "https://api.supermemory.ai/v3/search",
+        "https://api.supermemory.ai/v4/search",  # v4 endpoint
         headers=get_headers(),
-        json={"q": query, "limit": limit}
+        json={
+            "q": query, 
+            "limit": limit,
+            "searchMode": "hybrid"  # Search both memories and chunks
+        }
     )
     if not response.ok:
         return []

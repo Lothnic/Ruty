@@ -1,0 +1,57 @@
+{
+    "$schema": "https://schema.tauri.app/config/2",
+    "productName": "Ruty",
+    "version": "0.1.0",
+    "identifier": "com.ruty.app",
+    "build": {
+        "frontendDist": "../src"
+    },
+    "app": {
+        "windows": [
+            {
+                "title": "Ruty",
+                "width": 900,
+                "height": 200,
+                "minWidth": 900,
+                "minHeight": 50,
+                "resizable": true,
+                "decorations": false,
+                "transparent": true,
+                "alwaysOnTop": true,
+                "center": true,
+                "visible": false,
+                "skipTaskbar": true
+            }
+        ],
+        "trayIcon": {
+            "iconPath": "icons/icon.png",
+            "iconAsTemplate": true
+        },
+        "security": {
+            "csp": null
+        }
+    },
+    "bundle": {
+        "active": true,
+        "category": "Utility",
+        "icon": [
+            "icons/32x32.png",
+            "icons/128x128.png",
+            "icons/icon.icns",
+            "icons/icon.ico"
+        ],
+        "targets": "all",
+        "linux": {
+            "deb": {
+                "depends": []
+            }
+        },
+        "windows": {
+            "certificateThumbprint": null,
+            "digestAlgorithm": "sha256"
+        },
+        "externalBin": [
+            "binaries/ruty-backend"
+        ]
+    }
+}

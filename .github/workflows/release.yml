@@ -1,0 +1,149 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+  NODE_VERSION: '20'
+
+jobs:
+  # Build Python sidecar for each platform
+  build-sidecar:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            name: linux
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: windows
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            name: macos
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: |
+          uv sync
+          uv pip install pyinstaller
+
+      - name: Build sidecar executable
+        run: |
+          uv run pyinstaller --onefile --name ruty-backend-${{ matrix.target }} --collect-all ruty ruty/server.py
+
+      - name: Upload sidecar artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sidecar-${{ matrix.name }}
+          path: dist/ruty-backend-*
+
+  # Build Tauri application for each platform
+  build-tauri:
+    needs: build-sidecar
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            name: linux
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: windows
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            name: macos
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Download sidecar
+        uses: actions/download-artifact@v4
+        with:
+          name: sidecar-${{ matrix.name }}
+          path: src-tauri/binaries/
+
+      - name: Make sidecar executable (Unix)
+        if: matrix.os != 'windows-latest'
+        run: chmod +x src-tauri/binaries/*
+
+      - name: Build Tauri
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Ruty ${{ github.ref_name }}'
+          releaseBody: |
+            See the assets below to download Ruty for your platform.
+            
+            **Installation:**
+            - **Linux**: Download `.AppImage` or `.deb`
+            - **macOS**: Download `.dmg`
+            - **Windows**: Download `.msi`
+          releaseDraft: true
+          prerelease: false
+
+  # Simple check that Tauri builds work (no release)
+  check:
+    if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check Tauri build
+        run: |
+          cd src-tauri
+          cargo check

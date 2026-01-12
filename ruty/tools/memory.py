@@ -1,6 +1,6 @@
 """Memory tools for searching and adding to Supermemory"""
 from langchain_core.tools import tool
-from ..memory import search_supermemory, add_memory_to_supermemory
+from ..memory import search_supermemory, add_memory_to_supermemory, list_memories
 
 
 @tool
@@ -17,24 +17,42 @@ def search_memory(query: str) -> str:
     Returns:
         Relevant content from your knowledge base, or a message if nothing found
     """
-    results = search_supermemory(query, limit=5)
-    
-    if not results:
-        return "No relevant memories found for this query."
-    
-    # Extract content from results
     context_parts = []
-    for doc in results:
-        chunks = doc.get("chunks", [])
+    query_lower = query.lower()
+    
+    # 1. Search documents (PDFs) via search API
+    results = search_supermemory(query, limit=5)
+    for result in results:
+        chunks = result.get("chunks", [])
         for chunk in chunks:
             content = chunk.get("content", "")
             if content:
-                context_parts.append(content)
+                title = result.get("title", "")
+                context_parts.append(f"**{title}**:\n{content}" if title else content)
+    
+    # 2. Search text memories by listing and matching (since search API doesn't index them)
+    memories = list_memories()
+    for mem in memories:
+        if mem.get("type") == "text":
+            title = mem.get("title", "")
+            summary = mem.get("summary", "")
+            # Simple keyword matching
+            if any(word in (title + " " + summary).lower() for word in query_lower.split()):
+                if summary:
+                    context_parts.append(f"**{title}**:\n{summary}" if title else summary)
     
     if not context_parts:
         return "No relevant memories found for this query."
     
-    return "\n\n---\n\n".join(context_parts)
+    # Deduplicate and limit
+    seen = set()
+    unique_parts = []
+    for part in context_parts:
+        if part not in seen:
+            seen.add(part)
+            unique_parts.append(part)
+    
+    return "\n\n---\n\n".join(unique_parts[:5])
 
 
 @tool
