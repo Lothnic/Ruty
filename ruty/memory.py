@@ -7,7 +7,10 @@ from dotenv import load_dotenv
 # Ensure .env is loaded before accessing environment variables
 load_dotenv()
 
-SUPERMEMORY_API_KEY = os.getenv("SUPERMEMORY_API_KEY")
+from .config import api_key_context
+
+def get_supermemory_key():
+    return api_key_context.get().get("supermemory") or os.getenv("SUPERMEMORY_API_KEY")
 
 TEXT_EXTENSIONS = {'.txt', '.md', '.py', '.json', '.csv', '.html', '.css', '.js'}
 BINARY_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp'}
@@ -17,7 +20,7 @@ SUPPORTED_EXTENSIONS = TEXT_EXTENSIONS | BINARY_EXTENSIONS
 def get_headers():
     """Get common headers for Supermemory API"""
     return {
-        "Authorization": f"Bearer {SUPERMEMORY_API_KEY}",
+        "Authorization": f"Bearer {get_supermemory_key()}",
         "Content-Type": "application/json"
     }
 

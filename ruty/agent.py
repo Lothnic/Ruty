@@ -47,20 +47,23 @@ def create_agent(model_name: str = None, checkpointer = None):
     if model_name is None:
         model_name = os.getenv("RUTY_MODEL", "moonshotai/kimi-k2-instruct-0905")
     
-    # Initialize LLM with tool binding
-    # Using Groq via OpenAI-compatible API
-    llm = ChatOpenAI(
-        model=model_name,
-        api_key=os.getenv("GROQ_API_KEY"),
-        base_url="https://api.groq.com/openai/v1",
-        temperature=0.7,
-        max_tokens=2000,
-    ).bind_tools(ALL_TOOLS)
-    
     # Define the assistant node (reasoning)
     def assistant(state: AgentState):
         """The reasoning node - processes messages and decides actions"""
         from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+        from .config import api_key_context
+        
+        # Get API key from context or env
+        groq_api_key = api_key_context.get().get("groq") or os.getenv("GROQ_API_KEY")
+        
+        # Initialize LLM dynamically for this request
+        llm = ChatOpenAI(
+            model=model_name,
+            api_key=groq_api_key,
+            base_url="https://api.groq.com/openai/v1",
+            temperature=0.7,
+            max_tokens=2000,
+        ).bind_tools(ALL_TOOLS)
         
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         

@@ -12,6 +12,7 @@ let sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 10)
 let ws = null;
 let isProcessing = false;
 let lastFocusTime = 0;
+let apiKeys = {}; // Store API keys loaded from store
 
 // DOM Elements
 const input = document.getElementById('input');
@@ -82,7 +83,7 @@ async function sendMessageHTTP(message) {
         const res = await fetch(`${API_BASE}/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message, session_id: sessionId })
+            body: JSON.stringify({ message, session_id: sessionId, api_keys: apiKeys })
         });
 
         const data = await res.json();
@@ -105,7 +106,7 @@ async function sendMessageHTTP(message) {
  */
 function sendMessageWS(message) {
     if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ message }));
+        ws.send(JSON.stringify({ message, api_keys: apiKeys }));
     } else {
         // Fallback to HTTP
         sendMessageHTTP(message);
@@ -357,4 +358,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Force initial resize to ensure correct padding/shadows are visible
     setTimeout(resizeWindow, 100);
+
+    // Initialize Store and load keys
+    if (window.__TAURI__) {
+        const { Store } = window.__TAURI__.store;
+        const store = new Store('.settings.dat');
+
+        store.get('api_keys').then(keys => {
+            if (keys && (keys.groq || keys.supermemory)) {
+                console.log('✅ API keys loaded');
+                apiKeys = keys;
+            } else {
+                console.log('⚠️ No keys found, redirecting to settings');
+                window.location.href = 'settings.html';
+            }
+        }).catch(err => {
+            console.error('Failed to load settings:', err);
+            // On error, also safe to show settings
+            window.location.href = 'settings.html';
+        });
+    }
 });

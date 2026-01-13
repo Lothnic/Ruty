@@ -14,73 +14,23 @@ import uvicorn
 from langchain_core.messages import HumanMessage, AIMessage
 from .agent import create_agent
 from .memory import read_directory_context
+from .config import api_key_context
 
 
 # Session storage
 sessions: dict = {}
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Startup and shutdown events"""
-    print("🚀 Ruty backend starting...")
-    yield
-    print("👋 Ruty backend shutting down...")
-
-
-app = FastAPI(
-    title="Ruty Backend",
-    description="AI Assistant Backend for Tauri Frontend",
-    lifespan=lifespan
-)
-
-# Allow Tauri frontend to connect - using * since this is local-only
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+...
 
 class ChatRequest(BaseModel):
     """Request model for chat endpoint"""
     message: str
     session_id: str
     local_context: Optional[str] = None
+    api_keys: Optional[dict] = None
 
 
-class ChatResponse(BaseModel):
-    """Response model for chat endpoint"""
-    response: str
-    tools_used: list[str] = []
-    session_id: str
-
-
-class ContextRequest(BaseModel):
-    """Request model for loading local context"""
-    path: str
-    session_id: str
-
-
-def get_or_create_session(session_id: str):
-    """Get or create an agent session"""
-    if session_id not in sessions:
-        sessions[session_id] = {
-            "agent": create_agent(),
-            "config": {"configurable": {"thread_id": session_id}},
-            "local_context": "",
-            "created_at": datetime.now().isoformat()
-        }
-    return sessions[session_id]
-
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
-
+...
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
@@ -88,45 +38,51 @@ async def chat(request: ChatRequest):
     Process a chat message and return response.
     This is a synchronous endpoint that returns the full response.
     """
-    session = get_or_create_session(request.session_id)
-    agent = session["agent"]
-    config = session["config"]
-    
-    # Update local context if provided
-    if request.local_context:
-        session["local_context"] = request.local_context
-    
-    # Build input state
-    input_state = {"messages": [HumanMessage(content=request.message)]}
-    if session["local_context"]:
-        input_state["local_context"] = session["local_context"]
-    
-    # Process with agent
-    tools_used = []
-    final_response = ""
+    # Set API key context for this request
+    token = api_key_context.set(request.api_keys or {})
     
     try:
-        for event in agent.stream(input_state, config=config, stream_mode="values"):
-            if "messages" in event:
-                last_msg = event["messages"][-1]
-                
-                # Track tool calls
-                if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
-                    for tc in last_msg.tool_calls:
-                        tools_used.append(tc["name"])
-                
-                # Capture final response (AI message without tool calls)
-                if hasattr(last_msg, "content") and last_msg.content:
-                    if not hasattr(last_msg, "tool_calls") or not last_msg.tool_calls:
-                        final_response = last_msg.content
-    except Exception as e:
-        final_response = f"Error: {str(e)}"
-    
-    return ChatResponse(
-        response=final_response,
-        tools_used=list(set(tools_used)),  # Deduplicate
-        session_id=request.session_id
-    )
+        session = get_or_create_session(request.session_id)
+        agent = session["agent"]
+        config = session["config"]
+        
+        # Update local context if provided
+        if request.local_context:
+            session["local_context"] = request.local_context
+        
+        # Build input state
+        input_state = {"messages": [HumanMessage(content=request.message)]}
+        if session["local_context"]:
+            input_state["local_context"] = session["local_context"]
+        
+        # Process with agent
+        tools_used = []
+        final_response = ""
+        
+        try:
+            for event in agent.stream(input_state, config=config, stream_mode="values"):
+                if "messages" in event:
+                    last_msg = event["messages"][-1]
+                    
+                    # Track tool calls
+                    if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+                        for tc in last_msg.tool_calls:
+                            tools_used.append(tc["name"])
+                    
+                    # Capture final response (AI message without tool calls)
+                    if hasattr(last_msg, "content") and last_msg.content:
+                        if not hasattr(last_msg, "tool_calls") or not last_msg.tool_calls:
+                            final_response = last_msg.content
+        except Exception as e:
+            final_response = f"Error: {str(e)}"
+        
+        return ChatResponse(
+            response=final_response,
+            tools_used=list(set(tools_used)),  # Deduplicate
+            session_id=request.session_id
+        )
+    finally:
+        api_key_context.reset(token)
 
 
 @app.websocket("/ws/{session_id}")
@@ -144,48 +100,55 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
             data = await websocket.receive_json()
             message = data.get("message", "")
             local_context = data.get("local_context", "")
+            api_keys = data.get("api_keys", {})
             
-            if local_context:
-                session["local_context"] = local_context
+            # Set context for this iteration
+            token = api_key_context.set(api_keys)
             
-            # Build input state
-            input_state = {"messages": [HumanMessage(content=message)]}
-            if session["local_context"]:
-                input_state["local_context"] = session["local_context"]
-            
-            agent = session["agent"]
-            config = session["config"]
-            
-            # Stream response
             try:
-                for event in agent.stream(input_state, config=config, stream_mode="values"):
-                    if "messages" in event:
-                        last_msg = event["messages"][-1]
-                        
-                        # Send tool usage updates
-                        if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
-                            for tc in last_msg.tool_calls:
-                                await websocket.send_json({
-                                    "type": "tool",
-                                    "name": tc["name"]
-                                })
-                        
-                        # Send final response
-                        if hasattr(last_msg, "content") and last_msg.content:
-                            if not hasattr(last_msg, "tool_calls") or not last_msg.tool_calls:
-                                await websocket.send_json({
-                                    "type": "response",
-                                    "content": last_msg.content
-                                })
+                if local_context:
+                    session["local_context"] = local_context
                 
-                # Signal completion
-                await websocket.send_json({"type": "done"})
+                # Build input state
+                input_state = {"messages": [HumanMessage(content=message)]}
+                if session["local_context"]:
+                    input_state["local_context"] = session["local_context"]
                 
-            except Exception as e:
-                await websocket.send_json({
-                    "type": "error",
-                    "message": str(e)
-                })
+                agent = session["agent"]
+                config = session["config"]
+                
+                # Stream response
+                try:
+                    for event in agent.stream(input_state, config=config, stream_mode="values"):
+                        if "messages" in event:
+                            last_msg = event["messages"][-1]
+                            
+                            # Send tool usage updates
+                            if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
+                                for tc in last_msg.tool_calls:
+                                    await websocket.send_json({
+                                        "type": "tool",
+                                        "name": tc["name"]
+                                    })
+                            
+                            # Send final response
+                            if hasattr(last_msg, "content") and last_msg.content:
+                                if not hasattr(last_msg, "tool_calls") or not last_msg.tool_calls:
+                                    await websocket.send_json({
+                                        "type": "response",
+                                        "content": last_msg.content
+                                    })
+                    
+                    # Signal completion
+                    await websocket.send_json({"type": "done"})
+                    
+                except Exception as e:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": str(e)
+                    })
+            finally:
+                api_key_context.reset(token)
                 
     except WebSocketDisconnect:
         print(f"Session {session_id} disconnected")

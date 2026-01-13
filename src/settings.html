@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ruty Settings</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles/main.css">
+</head>
+
+<body>
+    <div class="spotlight-container">
+        <div class="card-base" style="padding: 32px; display: flex; flex-direction: column; gap: 24px;">
+            <h2 style="color:var(--text-primary); margin:0; font-weight:600;">Settings</h2>
+
+            <!-- Groq Key -->
+            <div>
+                <label
+                    style="display:block; color:var(--text-secondary); margin-bottom:8px; font-size:0.9rem; font-weight:500;">Groq
+                    API Key</label>
+                <div class="input-wrapper" style="height:48px; box-shadow:none; border:1px solid var(--border-subtle);">
+                    <input type="password" id="groq-key" placeholder="gsk_..."
+                        style="width:100%; background:transparent; border:none; color:var(--text-primary); outline:none; font-family:monospace;">
+                </div>
+                <div style="margin-top:4px; font-size:0.8rem; color:var(--text-muted);">Required for chat functionality.
+                </div>
+            </div>
+
+            <!-- Supermemory Key -->
+            <div>
+                <label
+                    style="display:block; color:var(--text-secondary); margin-bottom:8px; font-size:0.9rem; font-weight:500;">Supermemory
+                    API Key</label>
+                <div class="input-wrapper" style="height:48px; box-shadow:none; border:1px solid var(--border-subtle);">
+                    <input type="password" id="supermemory-key" placeholder="Enter key..."
+                        style="width:100%; background:transparent; border:none; color:var(--text-primary); outline:none; font-family:monospace;">
+                </div>
+                <div style="margin-top:4px; font-size:0.8rem; color:var(--text-muted);">Required for memory features.
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div style="display:flex; justify-content:flex-end; gap:16px; margin-top:8px;">
+                <a href="index.html"
+                    style="color:var(--text-secondary); text-decoration:none; display:flex; align-items:center; font-size:0.95rem; padding:8px;">Cancel</a>
+                <button id="save-btn"
+                    style="background:var(--accent-primary); color:white; border:none; padding:10px 24px; border-radius:8px; cursor:pointer; font-weight:500; font-size:0.95rem; box-shadow:var(--accent-glow);">Save
+                    Settings</button>
+            </div>
+        </div>
+    </div>
+    <script src="scripts/settings.js" type="module"></script>
+</body>
+
+</html>
