@@ -25,6 +25,7 @@
             ]
         },
         "global-shortcut:default",
-        "core:tray:default"
+        "core:tray:default",
+        "store:default"
     ]
 }
