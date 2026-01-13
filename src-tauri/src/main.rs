@@ -5,6 +5,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(debug_assertions)]
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use tauri::{
@@ -74,7 +75,7 @@ fn create_tray(app: &AppHandle) -> Result<TrayIcon, Box<dyn std::error::Error>> 
                 // Stop Python backend
                 if let Some(state) = app.try_state::<PythonBackend>() {
                     if let Ok(mut guard) = state.0.lock() {
-                        if let Some(ref mut child) = *guard {
+                        if let Some(child) = guard.take() {
                             let _ = child.kill();
                         }
                     }
