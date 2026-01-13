@@ -15,8 +15,11 @@ use tauri::{
 
 mod commands;
 
-/// State to hold the Python backend process
+#[cfg(debug_assertions)]
 struct PythonBackend(Mutex<Option<Child>>);
+
+#[cfg(not(debug_assertions))]
+struct PythonBackend(Mutex<Option<tauri_plugin_shell::process::CommandChild>>);
 
 fn main() {
     tauri::Builder::default()
