@@ -29,3 +29,10 @@ dependencies = [
     "uvicorn>=0.23.0",
     "websockets>=11.0",
 ]
+
+# Override pyqt5-qt5 for Windows - it has no Windows wheels, and PyQt5
+# Windows wheels bundle the Qt libraries directly, so it's not needed
+[tool.uv]
+override-dependencies = [
+    "pyqt5-qt5>=5.15.0; sys_platform != 'win32'",
+]
