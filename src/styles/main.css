@@ -12,7 +12,7 @@
   /* Accent colors */
   --accent-primary: #8b5cf6;
   --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
-  --accent-glow: 0 0 20px rgba(139, 92, 246, 0.3);
+  --accent-glow: 0 0 8px rgba(139, 92, 246, 0.15);
 
   /* Text colors */
   --text-primary: #f5f5f7;
@@ -23,9 +23,9 @@
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-active: rgba(139, 92, 246, 0.5);
 
-  /* Shadows */
-  --shadow-large: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
-  --shadow-glow: 0 0 40px rgba(139, 92, 246, 0.15);
+  /* Shadows - subtle */
+  --shadow-large: 0 8px 24px -8px rgba(0, 0, 0, 0.3);
+  --shadow-glow: 0 0 20px rgba(139, 92, 246, 0.08);
 
   /* Sizing */
   --window-width: 600px;
@@ -40,13 +40,14 @@
   /* Constrain visual width */
   margin: 0 auto;
   /* Center in the wider 900px window */
-  min-height: 100vh;
   background: transparent;
   display: flex;
   flex-direction: column;
   gap: 12px;
   padding: 40px;
+  padding-bottom: 48px;
   /* Essential! Prevents shadows/borders from being clipped by the window edges */
+  box-sizing: border-box;
 }
 
 /* Common Card Style */
@@ -155,23 +156,25 @@
 
 /* Response section */
 .response {
-  /* Separate card style */
-  background: var(--bg-primary);
+  /* Separate card style - FULLY OPAQUE to prevent previous content bleeding through */
+  background: rgb(20, 20, 25);
   border: 1px solid var(--border-subtle);
   border-radius: var(--border-radius);
   box-shadow: var(--shadow-large);
-  backdrop-filter: blur(20px);
-  overflow: hidden;
+  overflow-y: auto;
+  /* Allow natural height - window resizing handles max constraints */
   animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .response-content {
   padding: 16px;
+  padding-bottom: 20px;
   font-size: 0.9375rem;
   line-height: 1.6;
   color: var(--text-primary);
   white-space: pre-wrap;
   word-wrap: break-word;
+  /* No max-height - let content flow naturally, window resize handles clamping */
 }
 
 /* Globally hide scrollbars visually but allow scrolling */
@@ -185,11 +188,13 @@ html {
   /* Firefox */
   -ms-overflow-style: none;
   /* IE and Edge */
+  margin: 0;
+  padding: 0;
   height: 100%;
-  overflow-y: hidden;
-  /* Prevent body scroll */
   background: transparent;
   /* Essential for floating cards */
+  overflow: clip;
+  /* Prevent scrollbars but don't create new stacking context */
 }
 
 /* Context badge */

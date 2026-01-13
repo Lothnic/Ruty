@@ -128,6 +128,7 @@ function showToolUsage(toolName) {
 
     toolsText.textContent = friendlyNames[toolName] || `Using ${toolName}...`;
     tools.classList.remove('hidden');
+    resizeWindow(); // Also resize when tools appear
 }
 
 /**
@@ -162,61 +163,39 @@ function clearResponse() {
  * Resize Tauri window to fit content
  */
 async function resizeWindow() {
-    // Helper to perform resize
-    // Helper to perform resize
-    const performResize = async () => {
-        // Explicitly calculate required height of elements
-        const inputHeight = document.querySelector('.input-wrapper')?.offsetHeight || 56;
-        const responseCtx = document.getElementById('response');
-        const toolsCtx = document.getElementById('tools');
+    console.log('resizeWindow called');
+    console.log('__TAURI__ exists:', !!window.__TAURI__);
+    if (window.__TAURI__) {
+        console.log('__TAURI__ keys:', Object.keys(window.__TAURI__));
+    }
 
-        let responseHeight = 0;
-        let gap = 0;
+    if (!window.__TAURI__ || !window.__TAURI__.window) {
+        console.log('No Tauri window API available');
+        return;
+    }
 
-        if (!responseCtx.classList.contains('hidden')) {
-            responseHeight = responseCtx.scrollHeight;
-            gap = 12; // Gap between input and response
-        } else if (!toolsCtx.classList.contains('hidden')) {
-            // Also account for tools visible state
-            responseHeight = toolsCtx.scrollHeight;
-            gap = 12;
-        }
+    const { getCurrentWindow, LogicalSize } = window.__TAURI__.window;
+    const win = getCurrentWindow();
 
-        // Calculate total height:
-        // content heights + gap + padding (40px top + 40px bottom = 80px) + EXTRA ROBUST SAFETY (40px) = 120px
-        let targetHeight = inputHeight + responseHeight + gap + 120;
+    try {
+        const responseEl = document.getElementById('response');
+        const toolsEl = document.getElementById('tools');
+        const hasResponse = responseEl && !responseEl.classList.contains('hidden');
+        const hasTools = toolsEl && !toolsEl.classList.contains('hidden');
 
-        // Force minimum if text exists (failsafe)
-        const textLength = responseContent.textContent.trim().length;
-        if (textLength > 0 && targetHeight < 150) {
-            targetHeight = Math.max(targetHeight, 200);
-        }
+        console.log('hasResponse:', hasResponse, 'hasTools:', hasTools);
 
-        // Allow growing up to 1200px, shrink to 60px
-        const newHeight = Math.min(Math.max(targetHeight, 60), 1200);
+        // Small when empty, large when any content exists
+        const height = (hasResponse || hasTools) ? 600 : 136;
 
-        // Try Tauri v2 API
-        if (window.__TAURI__ && window.__TAURI__.window) {
-            try {
-                const { getCurrentWindow, LogicalSize } = window.__TAURI__.window;
-                const win = getCurrentWindow();
-                await win.setSize(new LogicalSize(900, newHeight));
+        console.log('Setting height to:', height);
 
-                // Center immediately
-                await win.center();
+        await win.setSize(new LogicalSize(900, height));
+        await win.center();
 
-                // Center AGAIN after a short delay to fix any race conditions
-                setTimeout(() => win.center(), 50);
-            } catch (e) {
-                console.log('Resize failed:', e);
-            }
-        }
-    };
-
-    // Attempt resize multiple times to catch layout shifts
-    for (const delay of [0, 50, 150]) {
-        await new Promise(r => setTimeout(r, delay));
-        await performResize();
+        console.log('Resize complete');
+    } catch (e) {
+        console.log('Resize error:', e);
     }
 }
 
