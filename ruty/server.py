@@ -1,9 +1,15 @@
-"""FastAPI backend server for Tauri frontend"""
+"""FastAPI backend server for Tauri frontend.
+
+Provides:
+- Chat endpoints (REST and WebSocket)
+- Provider configuration management
+- Session management
+- Local context loading
+"""
 import os
 import uuid
-import asyncio
 from datetime import datetime
-from typing import Optional, AsyncGenerator
+from typing import Optional
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -12,15 +18,45 @@ from pydantic import BaseModel
 import uvicorn
 
 from langchain_core.messages import HumanMessage, AIMessage
-from .agent import create_agent
+from .agent import create_agent, get_agent, reset_agent
 from .memory import read_directory_context
 from .config import api_key_context
+from .providers import (
+    get_config, update_config, list_providers, 
+    PROVIDERS, RutyConfig
+)
 
 
 # Session storage
 sessions: dict = {}
 
-...
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifecycle - startup and shutdown."""
+    print("🧠 Ruty AI backend starting...")
+    yield
+    print("👋 Ruty AI backend shutting down...")
+
+
+app = FastAPI(
+    title="Ruty AI Backend",
+    description="Personal AI assistant with memory",
+    version="0.3.0",
+    lifespan=lifespan,
+)
+
+# CORS for Tauri frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ============== Request/Response Models ==============
 
 class ChatRequest(BaseModel):
     """Request model for chat endpoint"""
@@ -30,7 +66,41 @@ class ChatRequest(BaseModel):
     api_keys: Optional[dict] = None
 
 
-...
+class ChatResponse(BaseModel):
+    """Response model for chat endpoint"""
+    response: str
+    tools_used: list[str] = []
+    session_id: str
+
+
+class ContextRequest(BaseModel):
+    """Request model for context loading"""
+    session_id: str
+    path: str
+
+
+class ProviderUpdateRequest(BaseModel):
+    """Request to update provider configuration"""
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    api_key: Optional[str] = None  # Key for the current provider
+
+
+# ============== Session Management ==============
+
+def get_or_create_session(session_id: str) -> dict:
+    """Get existing session or create new one."""
+    if session_id not in sessions:
+        sessions[session_id] = {
+            "agent": create_agent(),
+            "config": {"configurable": {"thread_id": session_id}},
+            "local_context": "",
+            "created_at": datetime.now().isoformat(),
+        }
+    return sessions[session_id]
+
+
+# ============== Chat Endpoints ==============
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
@@ -154,6 +224,72 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
         print(f"Session {session_id} disconnected")
 
 
+# ============== Provider Management ==============
+
+@app.get("/providers")
+async def get_providers():
+    """List available LLM providers and their models."""
+    return {
+        "providers": list_providers(),
+        "current": {
+            "provider": get_config().provider,
+            "model": get_config().current_model,
+        }
+    }
+
+
+@app.post("/providers/update")
+async def update_provider(request: ProviderUpdateRequest):
+    """Update the current provider configuration."""
+    config = get_config()
+    
+    updates = {}
+    
+    if request.provider and request.provider in PROVIDERS:
+        updates["provider"] = request.provider
+    
+    if request.model:
+        updates["model"] = request.model
+    
+    if request.api_key:
+        # Store the API key for the target provider
+        target_provider = request.provider or config.provider
+        new_keys = dict(config.api_keys)
+        new_keys[target_provider] = request.api_key
+        updates["api_keys"] = new_keys
+    
+    if updates:
+        new_config = update_config(**updates)
+        # Reset agent to pick up new config
+        reset_agent()
+        # Reset all sessions to use new agent
+        sessions.clear()
+        
+        return {
+            "success": True,
+            "provider": new_config.provider,
+            "model": new_config.current_model,
+        }
+    
+    return {"success": False, "error": "No valid updates provided"}
+
+
+@app.get("/config")
+async def get_current_config():
+    """Get current configuration (without sensitive keys)."""
+    config = get_config()
+    return {
+        "provider": config.provider,
+        "model": config.current_model,
+        "theme": config.theme,
+        "hotkey": config.hotkey,
+        "has_api_key": bool(config.current_api_key),
+        "has_supermemory_key": bool(config.get_supermemory_key()),
+    }
+
+
+# ============== Context Management ==============
+
 @app.post("/context/load")
 async def load_context(request: ContextRequest):
     """Load local files as context for the session"""
@@ -186,8 +322,10 @@ async def clear_context(session_id: str):
     return {"success": True}
 
 
+# ============== Session Management ==============
+
 @app.get("/sessions")
-async def list_sessions():
+async def list_sessions_endpoint():
     """List active sessions"""
     return {
         "sessions": [
@@ -196,6 +334,31 @@ async def list_sessions():
         ]
     }
 
+
+@app.delete("/sessions/{session_id}")
+async def delete_session(session_id: str):
+    """Delete a session"""
+    if session_id in sessions:
+        del sessions[session_id]
+        return {"success": True}
+    return {"success": False, "error": "Session not found"}
+
+
+# ============== Health Check ==============
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    config = get_config()
+    return {
+        "status": "healthy",
+        "provider": config.provider,
+        "model": config.current_model,
+        "sessions_active": len(sessions),
+    }
+
+
+# ============== Server Runner ==============
 
 def run_server(host: str = "127.0.0.1", port: int = 3847):
     """Run the FastAPI server"""

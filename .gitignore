@@ -35,6 +35,7 @@ MANIFEST
 src-tauri/target/
 src-tauri/gen/
 src-tauri/binaries/
+src-tauri/ruty-backend-x86_64-unknown-linux-gnu
 
 # Node / Frontend
 node_modules/

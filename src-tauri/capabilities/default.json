@@ -26,6 +26,38 @@
         },
         "global-shortcut:default",
         "core:tray:default",
-        "store:default"
+        "store:default",
+        {
+            "identifier": "store:allow-load",
+            "allow": [
+                {
+                    "path": "settings.json"
+                }
+            ]
+        },
+        {
+            "identifier": "store:allow-save",
+            "allow": [
+                {
+                    "path": "settings.json"
+                }
+            ]
+        },
+        {
+            "identifier": "store:allow-set",
+            "allow": [
+                {
+                    "path": "settings.json"
+                }
+            ]
+        },
+        {
+            "identifier": "store:allow-get",
+            "allow": [
+                {
+                    "path": "settings.json"
+                }
+            ]
+        }
     ]
 }

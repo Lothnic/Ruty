@@ -14,7 +14,7 @@ use tauri::{
     AppHandle, Manager, WebviewWindow,
 };
 
-mod commands;
+use ruty_lib::commands;
 
 #[cfg(debug_assertions)]
 struct PythonBackend(Mutex<Option<Child>>);
@@ -41,6 +41,14 @@ fn main() {
                 eprintln!("   Use system tray to open Ruty instead");
             }
 
+            // Center the window properly on first launch
+            // Show briefly, center, then hide - this ensures proper positioning
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.center();
+                let _ = window.hide();
+            }
+
             println!("✅ Ruty started!");
             println!("   Press Super+Space to toggle window (or use tray)");
 
@@ -51,7 +59,28 @@ fn main() {
             commands::toggle_window_cmd,
             commands::load_context,
             commands::clear_context,
+            commands::search_apps,
+            commands::launch_app,
+            commands::refresh_apps,
+            commands::search_files,
+            commands::open_file,
+            commands::reveal_file,
+            commands::init_clipboard,
+            commands::get_clipboard_history,
+            commands::copy_to_clipboard,
         ])
+        .on_window_event(|window, event| {
+            // Center window on first show (WebContentsLoaded)
+            if let tauri::WindowEvent::Focused(true) = event {
+                // Only center if not already properly positioned (first focus)
+                if let Ok(pos) = window.outer_position() {
+                    // If window is at origin (0,0 or close), it wasn't centered properly
+                    if pos.x < 100 && pos.y < 100 {
+                        let _ = window.center();
+                    }
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -76,7 +105,7 @@ fn create_tray(app: &AppHandle) -> Result<TrayIcon, Box<dyn std::error::Error>> 
                 // Stop Python backend
                 if let Some(state) = app.try_state::<PythonBackend>() {
                     if let Ok(mut guard) = state.0.lock() {
-                        if let Some(child) = guard.take() {
+                        if let Some(mut child) = guard.take() {
                             let _ = child.kill();
                         }
                     }
@@ -99,14 +128,16 @@ fn create_tray(app: &AppHandle) -> Result<TrayIcon, Box<dyn std::error::Error>> 
 
 /// Register Super+Space global shortcut
 fn register_global_shortcut(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
+    use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
     let shortcut: Shortcut = "Super+Space".parse()?;
 
     let app_handle = app.clone();
-    app.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, _event| {
-        if let Some(window) = app_handle.get_webview_window("main") {
-            toggle_window(&window);
+    app.global_shortcut().on_shortcut(shortcut, move |_app, _shortcut, event| {
+        if event.state == ShortcutState::Pressed {
+            if let Some(window) = app_handle.get_webview_window("main") {
+                toggle_window(&window);
+            }
         }
     })?;
 
@@ -119,14 +150,29 @@ fn register_global_shortcut(app: &AppHandle) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
-/// Toggle window visibility
+/// Toggle window visibility with aggressive focus handling for Linux
 fn toggle_window(window: &WebviewWindow) {
     if window.is_visible().unwrap_or(false) {
         let _ = window.hide();
     } else {
+        // Show and center
         let _ = window.show();
         let _ = window.center();
+        
+        // Set always-on-top temporarily to force window to front
+        let _ = window.set_always_on_top(true);
+        
+        // Request focus multiple times (helps on some Linux WMs)
         let _ = window.set_focus();
+        
+        // Disable always-on-top after a brief moment
+        let window_clone = window.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let _ = window_clone.set_always_on_top(false);
+            // Try focus again after removing always-on-top
+            let _ = window_clone.set_focus();
+        });
     }
 }
 

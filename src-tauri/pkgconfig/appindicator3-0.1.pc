@@ -1,0 +1,14 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=/usr/lib/x86_64-linux-gnu
+bindir=/usr/bin
+includedir=/usr/include
+
+Cflags: -I${includedir}/libayatana-appindicator3-0.1
+Requires: ayatana-indicator3-0.4 dbusmenu-glib-0.4 glib-2.0 gtk+-3.0
+Libs: -L${libdir} -layatana-appindicator3
+
+Name: ayatana-appindicator3-0.1
+Description: Ayatana Application Indicators
+Version: 0.5.90
+

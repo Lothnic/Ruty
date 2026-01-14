@@ -1,7 +1,11 @@
 /**
  * Ruty Frontend Application
- * Handles Tauri IPC communication and UI interactions
+ * Handles Tauri IPC communication, command system, and UI interactions
  */
+
+import { Store } from './tauri-store.js';
+import { commandRegistry } from './commands.js';
+import { resultList } from './results.js';
 
 // API Configuration
 const API_BASE = 'http://127.0.0.1:3847';
@@ -13,6 +17,7 @@ let ws = null;
 let isProcessing = false;
 let lastFocusTime = 0;
 let apiKeys = {}; // Store API keys loaded from store
+let inputDebounceTimer = null;
 
 // DOM Elements
 const input = document.getElementById('input');
@@ -114,7 +119,7 @@ function sendMessageWS(message) {
 }
 
 /**
- * Show tool usage indicator
+ * Show tool usage indicator (with friendly names for new tools)
  */
 function showToolUsage(toolName) {
     const friendlyNames = {
@@ -124,12 +129,15 @@ function showToolUsage(toolName) {
         'upload_file': 'Uploading file...',
         'load_local_context': 'Loading context...',
         'list_documents': 'Listing documents...',
-        'delete_document': 'Deleting document...'
+        'delete_document': 'Deleting document...',
+        'open_url': 'Opening URL...',
+        'run_shell': 'Running command...',
+        'get_system_info': 'Getting system info...',
     };
 
     toolsText.textContent = friendlyNames[toolName] || `Using ${toolName}...`;
     tools.classList.remove('hidden');
-    resizeWindow(); // Also resize when tools appear
+    resizeWindow();
 }
 
 /**
@@ -143,10 +151,9 @@ function hideTools() {
  * Show response in the UI
  */
 function showResponse(text) {
+    resultList.hide(); // Hide result list when showing response
     responseContent.textContent = text;
     response.classList.remove('hidden');
-
-    // Resize window to fit content (Tauri-specific)
     resizeWindow();
 }
 
@@ -162,18 +169,11 @@ function clearResponse() {
 
 /**
  * Resize Tauri window to fit content
+ * Note: We don't re-center to avoid jarring jumps while typing
+ * Layout: Input (136px) -> Results (above) -> Response (below)
  */
 async function resizeWindow() {
-    console.log('resizeWindow called');
-    console.log('__TAURI__ exists:', !!window.__TAURI__);
-    if (window.__TAURI__) {
-        console.log('__TAURI__ keys:', Object.keys(window.__TAURI__));
-    }
-
-    if (!window.__TAURI__ || !window.__TAURI__.window) {
-        console.log('No Tauri window API available');
-        return;
-    }
+    if (!window.__TAURI__ || !window.__TAURI__.window) return;
 
     const { getCurrentWindow, LogicalSize } = window.__TAURI__.window;
     const win = getCurrentWindow();
@@ -181,74 +181,290 @@ async function resizeWindow() {
     try {
         const responseEl = document.getElementById('response');
         const toolsEl = document.getElementById('tools');
+        const resultsEl = document.getElementById('results');
+
         const hasResponse = responseEl && !responseEl.classList.contains('hidden');
         const hasTools = toolsEl && !toolsEl.classList.contains('hidden');
+        const hasResults = resultsEl && !resultsEl.classList.contains('hidden');
 
-        console.log('hasResponse:', hasResponse, 'hasTools:', hasTools);
+        // Base height (input only)
+        let height = 136;
 
-        // Small when empty, large when any content exists
-        const height = (hasResponse || hasTools) ? 600 : 136;
+        // Add results height if visible
+        if (hasResults) {
+            const resultsHeight = Math.min(resultsEl.scrollHeight, 300);
+            height += resultsHeight + 12;
+        }
 
-        console.log('Setting height to:', height);
+        // Add response/tools height if visible
+        if (hasResponse || hasTools) {
+            // Cap response display at reasonable height
+            height += 300;
+        }
+
+        // Cap total height
+        height = Math.min(height, 700);
 
         await win.setSize(new LogicalSize(900, height));
-        await win.center();
-
-        console.log('Resize complete');
+        // Don't re-center - causes jarring jumps while typing
     } catch (e) {
         console.log('Resize error:', e);
     }
 }
 
 /**
- * Toggle window visibility (Tauri command)
+ * Handle input changes - update command results
  */
-async function toggleWindow() {
-    if (window.__TAURI__ && window.__TAURI__.tauri) {
-        const { invoke } = window.__TAURI__.tauri;
-        await invoke('toggle_window_cmd');
+async function handleInputChange() {
+    const query = input.value;
+
+    // Clear debounce timer
+    if (inputDebounceTimer) {
+        clearTimeout(inputDebounceTimer);
     }
+
+    // Debounce to avoid too many updates
+    inputDebounceTimer = setTimeout(async () => {
+        // DON'T hide previous response while typing - keep it visible
+        // Response will only be replaced when new query is sent
+
+        // Get results from command registry
+        const results = await commandRegistry.getResults(query);
+
+        if (results.length > 0 && query.length > 0) {
+            resultList.show(results);
+            resizeWindow();
+        } else if (query.length === 0) {
+            resultList.hide();
+            resizeWindow();
+        }
+    }, 100);
 }
 
 /**
- * Handle input submission
+ * Handle result selection
+ */
+async function handleResultAction(result, item) {
+    if (!result) return;
+
+    switch (result.type) {
+        case 'ai':
+            // Send to AI
+            resultList.hide();
+            isProcessing = true;
+            const icon = document.querySelector('.input-icon');
+            if (icon) icon.classList.add('rotating');
+            sendMessageWS(result.query);
+            input.value = '';
+            break;
+
+        case 'insert':
+            // Insert text into input
+            input.value = result.value;
+            input.focus();
+            handleInputChange();
+            break;
+
+        case 'navigate':
+            // Navigate to URL
+            window.location.href = result.url;
+            break;
+
+        case 'url':
+            // Open URL (tell AI to open it)
+            resultList.hide();
+            sendMessageWS(`Please open this URL: ${result.url}`);
+            input.value = '';
+            break;
+
+        case 'copy':
+            // Copy to clipboard
+            await navigator.clipboard.writeText(result.value);
+            showResponse(`✓ Copied: ${result.value}`);
+            resultList.hide();
+            input.value = '';
+            break;
+
+        case 'context':
+            // Load context
+            resultList.hide();
+            await loadContext(result.path);
+            input.value = '';
+            break;
+
+        case 'clear':
+            resultList.hide();
+            clearResponse();
+            input.value = '';
+            break;
+
+        case 'clearContext':
+            resultList.hide();
+            await clearContext();
+            input.value = '';
+            break;
+
+        case 'provider':
+            // Switch provider
+            try {
+                await fetch(`${API_BASE}/providers/update`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider: result.provider })
+                });
+                showResponse(`✓ Switched to ${result.provider}`);
+            } catch (e) {
+                showResponse(`✗ Failed to switch provider: ${e.message}`);
+            }
+            resultList.hide();
+            input.value = '';
+            break;
+
+        case 'launchApp':
+            // Launch application via Tauri
+            resultList.hide();
+            input.value = '';
+            try {
+                if (window.__TAURI__?.core?.invoke) {
+                    const msg = await window.__TAURI__.core.invoke('launch_app', { appId: result.appId });
+                    showResponse(`✓ ${msg}`);
+                    // Optionally hide window after launch
+                    if (window.__TAURI__?.window) {
+                        const { getCurrentWindow } = window.__TAURI__.window;
+                        setTimeout(() => getCurrentWindow().hide(), 500);
+                    }
+                } else {
+                    showResponse(`✗ Tauri not available`);
+                }
+            } catch (e) {
+                showResponse(`✗ Failed to launch: ${e}`);
+            }
+            break;
+
+        case 'quit':
+            // Quit the application
+            if (window.__TAURI__?.core?.invoke) {
+                // Use Tauri's exit API
+                const { exit } = await import('@tauri-apps/plugin-process') || {};
+                if (exit) {
+                    await exit(0);
+                } else {
+                    // Fallback: close window
+                    if (window.__TAURI__?.window) {
+                        const { getCurrentWindow } = window.__TAURI__.window;
+                        await getCurrentWindow().close();
+                    }
+                }
+            }
+            break;
+
+        case 'openFile':
+            // Open file via Tauri
+            resultList.hide();
+            input.value = '';
+            try {
+                if (window.__TAURI__?.core?.invoke) {
+                    const msg = await window.__TAURI__.core.invoke('open_file', { path: result.path });
+                    showResponse(`✓ ${msg}`);
+                    // Optionally hide window after open
+                    if (window.__TAURI__?.window) {
+                        const { getCurrentWindow } = window.__TAURI__.window;
+                        setTimeout(() => getCurrentWindow().hide(), 500);
+                    }
+                } else {
+                    showResponse(`✗ Tauri not available`);
+                }
+            } catch (e) {
+                showResponse(`✗ Failed to open: ${e}`);
+            }
+            break;
+
+        case 'copyToClipboard':
+            // Copy via Rust backend (moves to top of history/pastes to clipboard)
+            resultList.hide();
+            input.value = '';
+            try {
+                if (window.__TAURI__?.core?.invoke) {
+                    await window.__TAURI__.core.invoke('copy_to_clipboard', { content: result.content });
+                    showResponse('✓ Copied to clipboard');
+                    // Hide window
+                    if (window.__TAURI__?.window) {
+                        const { getCurrentWindow } = window.__TAURI__.window;
+                        setTimeout(() => getCurrentWindow().hide(), 500);
+                    }
+                } else {
+                    // Fallback to browser API if Tauri not available (but browser API is limited)
+                    try {
+                        await navigator.clipboard.writeText(result.content);
+                        showResponse('✓ Copied (local)');
+                    } catch (e) {
+                        showResponse(`✗ Failed to copy: ${e}`);
+                    }
+                }
+            } catch (e) {
+                showResponse(`✗ Failed to copy: ${e}`);
+            }
+            break;
+
+        case 'openUrl':
+            // Open URL via open_file (xdg-open handles URLs)
+            resultList.hide();
+            input.value = '';
+            try {
+                if (window.__TAURI__?.core?.invoke) {
+                    await window.__TAURI__.core.invoke('open_file', { path: result.url });
+                    showResponse(`✓ Opened ${result.url}`);
+                    // Hide window
+                    if (window.__TAURI__?.window) {
+                        const { getCurrentWindow } = window.__TAURI__.window;
+                        setTimeout(() => getCurrentWindow().hide(), 500);
+                    }
+                } else {
+                    window.open(result.url, '_blank');
+                    showResponse('✓ Opened in browser');
+                }
+            } catch (e) {
+                showResponse(`✗ Failed to open URL: ${e}`);
+            }
+            break;
+    }
+}
+
+// Initialize clipboard monitor
+if (window.__TAURI__?.core?.invoke) {
+    window.__TAURI__.core.invoke('init_clipboard')
+        .catch(e => console.error('Failed to init clipboard:', e));
+}
+
+/**
+ * Handle input submission (Enter key)
  */
 async function handleSubmit() {
     const message = input.value.trim();
     if (!message || isProcessing) return;
 
+    // Capture selected result before hiding (if any)
+    const selectedResult = resultList.isVisible() ? resultList.getSelected() : null;
+
+    // Hide result list immediately to prevent flash
+    resultList.hide();
+    resizeWindow();
+
+    // If there was a selected result with an action, execute it
+    if (selectedResult && selectedResult.action) {
+        const result = await selectedResult.action();
+        await handleResultAction(result, selectedResult);
+        return;
+    }
+
+    // Otherwise send to AI directly
     isProcessing = true;
     input.value = '';
 
-    // Show loading state on input icon instead of response area
     const icon = document.querySelector('.input-icon');
     if (icon) icon.classList.add('rotating');
 
-    // Send message
     sendMessageWS(message);
-}
-
-/**
- * Handle slash commands
- */
-async function handleCommand(cmd) {
-    const [command, ...args] = cmd.slice(1).split(' ');
-    const arg = args.join(' ');
-
-    switch (command.toLowerCase()) {
-        case 'context':
-            if (!arg || arg === 'clear') {
-                clearContext();
-            } else {
-                await loadContext(arg);
-            }
-            break;
-        case 'clear':
-            clearResponse();
-            break;
-        default:
-            showResponse(`Unknown command: /${command}`);
-    }
 }
 
 /**
@@ -291,7 +507,22 @@ async function clearContext() {
     }
 }
 
-// Event Listeners
+/**
+ * Toggle window visibility (Tauri command)
+ */
+async function toggleWindow() {
+    if (window.__TAURI__ && window.__TAURI__.tauri) {
+        const { invoke } = window.__TAURI__.tauri;
+        await invoke('toggle_window_cmd');
+    }
+}
+
+// ============== Event Listeners ==============
+
+// Input changes
+input.addEventListener('input', handleInputChange);
+
+// Keyboard navigation
 input.addEventListener('keydown', (e) => {
     // Prevent space input if window just focused (avoids Super+Space artifact)
     if (e.key === ' ' && Date.now() - lastFocusTime < 200) {
@@ -299,23 +530,24 @@ input.addEventListener('keydown', (e) => {
         return;
     }
 
+    // Let result list handle navigation keys
+    if (resultList.handleKeyDown(e)) {
+        return;
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        const value = input.value.trim();
-
-        if (value.startsWith('/')) {
-            handleCommand(value);
-            input.value = '';
-        } else {
-            handleSubmit();
-        }
+        handleSubmit();
     }
 });
 
-// Escape to hide window
+// Escape to hide window or clear
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-        if (window.__TAURI__) {
+        if (resultList.isVisible()) {
+            resultList.hide();
+            resizeWindow();
+        } else if (window.__TAURI__) {
             toggleWindow();
         }
     }
@@ -327,9 +559,13 @@ contextClear.addEventListener('click', clearContext);
 // Window focus tracking
 window.addEventListener('focus', () => {
     lastFocusTime = Date.now();
+    input.focus();
 });
 
-// Initialize
+// Set up result list callback
+resultList.onSelect = handleResultAction;
+
+// ============== Initialize ==============
 document.addEventListener('DOMContentLoaded', () => {
     // Retry connecting to API with backoff
     const tryConnect = (attempts = 0) => {
@@ -340,8 +576,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         fetch(`${API_BASE}/health`)
             .then(res => res.json())
-            .then(() => {
-                console.log('✅ Connected to Python backend');
+            .then((data) => {
+                console.log(`✅ Connected to Python backend (${data.provider}/${data.model})`);
                 initWebSocket();
             })
             .catch(() => {
@@ -356,26 +592,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     input.focus();
 
-    // Force initial resize to ensure correct padding/shadows are visible
+    // Force initial resize
     setTimeout(resizeWindow, 100);
 
     // Initialize Store and load keys
     if (window.__TAURI__) {
-        const { Store } = window.__TAURI__.store;
-        const store = new Store('.settings.dat');
+        const store = new Store('settings.json');
 
         store.get('api_keys').then(keys => {
             if (keys && (keys.groq || keys.supermemory)) {
                 console.log('✅ API keys loaded');
                 apiKeys = keys;
             } else {
-                console.log('⚠️ No keys found, redirecting to settings');
-                window.location.href = 'settings.html';
+                console.log('⚠️ No API keys found - some features may not work');
+                // Don't auto-redirect, let user choose to configure
             }
         }).catch(err => {
             console.error('Failed to load settings:', err);
-            // On error, also safe to show settings
-            window.location.href = 'settings.html';
+            // Don't redirect on error - just continue without keys
         });
     }
 });

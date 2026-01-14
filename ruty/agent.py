@@ -1,13 +1,21 @@
-"""LangGraph ReAct Agent for Ruty"""
+"""LangGraph ReAct Agent for Ruty.
+
+A personal AI assistant with memory, supporting multiple LLM providers
+and persistent conversation history.
+"""
 import os
+import sqlite3
+from pathlib import Path
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langchain_openai import ChatOpenAI
 
 from .state import AgentState
 from .tools import ALL_TOOLS
+from .providers import get_config, PROVIDERS
 
 load_dotenv()
 
@@ -22,6 +30,8 @@ You have the following capabilities through your tools:
 - **load_local_context**: Temporarily load local files for the current conversation
 - **list_documents**: List all documents in your knowledge base
 - **delete_document**: Delete a document from your knowledge base
+- **open_url**: Open a URL in the user's default browser
+- **run_shell**: Execute a shell command (be careful!)
 
 Guidelines:
 1. When the user asks a question, FIRST search your memory to find relevant context
@@ -30,22 +40,77 @@ Guidelines:
 4. Be conversational and helpful - you're a personal assistant
 5. If you don't find relevant information in memory, say so and offer to help anyway
 6. Keep responses concise but informative
+7. For URLs or web content, use open_url to help the user
+8. For system tasks, use run_shell cautiously and explain what you're doing
 """
 
+# SQLite database for conversation persistence
+DB_PATH = Path.home() / ".config" / "ruty" / "conversations.db"
 
-def create_agent(model_name: str = None, checkpointer = None):
+
+def get_checkpointer(persistent: bool = True):
+    """Get a checkpointer for conversation persistence.
+    
+    Args:
+        persistent: If True, use SQLite. If False, use in-memory.
+    
+    Returns:
+        A LangGraph checkpointer instance.
+    """
+    if persistent:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        # Use sqlite3.connect with check_same_thread=False for thread safety
+        conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+        return SqliteSaver(conn)
+    return MemorySaver()
+
+
+def create_llm(config=None, api_key_override: str = None):
+    """Create an LLM instance based on configuration.
+    
+    Args:
+        config: RutyConfig instance (uses global if None)
+        api_key_override: Override API key for this request
+    
+    Returns:
+        A ChatOpenAI instance configured for the selected provider.
+    """
+    if config is None:
+        config = get_config()
+    
+    provider = config.current_provider
+    model = config.current_model
+    api_key = api_key_override or config.current_api_key
+    
+    # For providers that don't require keys (Ollama), use dummy
+    if not provider.requires_key:
+        api_key = "not-needed"
+    
+    # Preventing crash if key is missing (allow initialization, fail on call)
+    if not api_key:
+        api_key = "missing-key-placeholder"
+    
+    return ChatOpenAI(
+        model=model,
+        api_key=api_key,
+        base_url=provider.base_url,
+        temperature=0.7,
+        max_tokens=2000,
+    )
+
+
+def create_agent(checkpointer=None, config=None):
     """Build and return the LangGraph agent.
     
     Args:
-        model_name: Override the default model
-        checkpointer: Optional persistence layer (defaults to in-memory)
+        checkpointer: Optional persistence layer (defaults to SQLite)
+        config: Optional RutyConfig override
         
     Returns:
         Compiled LangGraph agent with checkpointing
     """
-    # Default to the model from environment or fallback
-    if model_name is None:
-        model_name = os.getenv("RUTY_MODEL", "moonshotai/kimi-k2-instruct-0905")
+    if config is None:
+        config = get_config()
     
     # Define the assistant node (reasoning)
     def assistant(state: AgentState):
@@ -53,17 +118,13 @@ def create_agent(model_name: str = None, checkpointer = None):
         from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
         from .config import api_key_context
         
-        # Get API key from context or env
-        groq_api_key = api_key_context.get().get("groq") or os.getenv("GROQ_API_KEY")
+        # Get API key from context or config
+        ctx_keys = api_key_context.get()
+        provider_id = config.provider
+        api_key = ctx_keys.get(provider_id) or config.current_api_key
         
-        # Initialize LLM dynamically for this request
-        llm = ChatOpenAI(
-            model=model_name,
-            api_key=groq_api_key,
-            base_url="https://api.groq.com/openai/v1",
-            temperature=0.7,
-            max_tokens=2000,
-        ).bind_tools(ALL_TOOLS)
+        # Create LLM with current config
+        llm = create_llm(config, api_key_override=api_key).bind_tools(ALL_TOOLS)
         
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         
@@ -74,8 +135,7 @@ def create_agent(model_name: str = None, checkpointer = None):
                 "content": f"[Local Context]\n{state['local_context']}"
             })
         
-        # Aggressive trimming: keep only last 6 messages to stay well under 10k tokens
-        # This typically covers: recent HumanMessage + current ReAct loop messages
+        # Aggressive trimming: keep only last 6 messages to stay under context limits
         MAX_MESSAGES = 6
         conversation = state["messages"]
         if len(conversation) > MAX_MESSAGES:
@@ -105,7 +165,7 @@ def create_agent(model_name: str = None, checkpointer = None):
     
     # Compile with checkpointer
     if checkpointer is None:
-        checkpointer = MemorySaver()
+        checkpointer = get_checkpointer(persistent=True)
         
     return graph.compile(checkpointer=checkpointer)
 
@@ -114,9 +174,22 @@ def create_agent(model_name: str = None, checkpointer = None):
 _agent = None
 
 
-def get_agent():
-    """Get or create the singleton agent instance"""
+def get_agent(force_new: bool = False):
+    """Get or create the singleton agent instance.
+    
+    Args:
+        force_new: Force creation of a new agent (e.g., after config change)
+    
+    Returns:
+        Compiled LangGraph agent
+    """
     global _agent
-    if _agent is None:
+    if _agent is None or force_new:
         _agent = create_agent()
     return _agent
+
+
+def reset_agent():
+    """Reset the agent (useful after config changes)."""
+    global _agent
+    _agent = None
