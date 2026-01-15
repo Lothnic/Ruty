@@ -223,17 +223,10 @@ impl Ruty {
             Message::Tick => {
                 // Check if hotkey was pressed during this tick
                 if hotkey::check_hotkey_pressed() {
-                    tracing::info!("Hotkey detected: Super+Space - toggling window");
-                    self.visible = !self.visible;
-                    
-                    // Get main window ID and toggle visibility
-                    return if self.visible {
-                        // Show window: gain focus
-                        window::get_oldest().and_then(|id| window::gain_focus(id))
-                    } else {
-                        // Hide window: minimize
-                        window::get_oldest().and_then(|id| window::minimize(id, true))
-                    };
+                    tracing::info!("Hotkey detected - exiting app (keybind will restart)");
+                    // On Wayland, window commands don't work reliably
+                    // Just exit the process - the toggle script will restart if needed
+                    std::process::exit(0);
                 }
                 Task::none()
             }
