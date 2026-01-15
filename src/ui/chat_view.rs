@@ -1,0 +1,1 @@
+//! Chat view widget (placeholder)
