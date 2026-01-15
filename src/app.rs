@@ -380,17 +380,22 @@ impl Ruty {
                         
                         // Toggle window visibility using resize (Wayland doesn't support move_to)
                         return if visible {
-                            // Show: resize to full size and bring to front
+                            // Show: resize to full size and try to bring to front
                             window::get_oldest().and_then(|id| {
                                 Task::batch([
                                     window::resize(id, iced::Size::new(700.0, 400.0)),
                                     window::gain_focus(id),
+                                    window::request_user_attention(id, Some(window::UserAttention::Critical)),
+                                    window::change_level(id, window::Level::AlwaysOnTop),
                                 ])
                             })
                         } else {
-                            // Hide: shrink to minimal size
+                            // Hide: shrink to minimal size and set normal level
                             window::get_oldest().and_then(|id| {
-                                window::resize(id, iced::Size::new(1.0, 1.0))
+                                Task::batch([
+                                    window::resize(id, iced::Size::new(1.0, 1.0)),
+                                    window::change_level(id, window::Level::Normal),
+                                ])
                             })
                         };
                     }
