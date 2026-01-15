@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package ruty;
+
+// Empty message for simple requests/responses
+message Empty {}
+
+// Window visibility state
+message WindowState {
+    bool visible = 1;
+}
+
+// Ruty daemon service
+service RutyService {
+    // Health check
+    rpc Ping(Empty) returns (Empty);
+    
+    // Show the launcher window (toggle if already visible)
+    rpc ShowWindow(Empty) returns (Empty);
+    
+    // Hide the launcher window
+    rpc HideWindow(Empty) returns (Empty);
+    
+    // Toggle window visibility
+    rpc ToggleWindow(Empty) returns (WindowState);
+    
+    // Get current window state
+    rpc GetWindowState(Empty) returns (WindowState);
+    
+    // Quit the daemon
+    rpc Quit(Empty) returns (Empty);
+}

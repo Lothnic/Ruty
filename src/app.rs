@@ -221,29 +221,51 @@ impl Ruty {
                 Task::none()
             }
             Message::Tick => {
-                // Check for IPC toggle command (from "ruty toggle" CLI)
-                if crate::ipc::check_toggle_requested() {
-                    tracing::info!("IPC toggle command received - exiting");
-                    std::process::exit(0);
-                }
-                
-                // Check for IPC close command
-                if crate::ipc::check_close_requested() {
-                    tracing::info!("IPC close command received - exiting");
-                    std::process::exit(0);
+                // Check RPC WindowController for toggle requests
+                if let Some(controller) = crate::get_window_controller() {
+                    use std::sync::atomic::Ordering;
+                    
+                    // Check for quit
+                    if controller.quit_requested.swap(false, Ordering::SeqCst) {
+                        tracing::info!("Quit requested via RPC");
+                        std::process::exit(0);
+                    }
+                    
+                    // Check for visibility toggle
+                    if controller.toggle_requested.swap(false, Ordering::SeqCst) {
+                        let visible = controller.visible.load(Ordering::SeqCst);
+                        tracing::info!("Window visibility change via RPC: {}", visible);
+                        
+                        // Toggle window visibility by moving it on/off screen
+                        return if visible {
+                            // Move to center of screen (approximate)
+                            window::get_oldest().and_then(|id| {
+                                window::move_to(id, iced::Point::new(500.0, 300.0))
+                            })
+                        } else {
+                            // Move off-screen
+                            window::get_oldest().and_then(|id| {
+                                window::move_to(id, iced::Point::new(-9999.0, -9999.0))
+                            })
+                        };
+                    }
                 }
                 
                 // Check if hotkey was pressed (X11 or SIGUSR1)
                 if hotkey::check_hotkey_pressed() {
-                    tracing::info!("Hotkey detected - exiting app");
-                    std::process::exit(0);
+                    tracing::info!("Hotkey detected - toggling window");
+                    if let Some(controller) = crate::get_window_controller() {
+                        use std::sync::atomic::Ordering;
+                        let current = controller.visible.load(Ordering::SeqCst);
+                        controller.visible.store(!current, Ordering::SeqCst);
+                        controller.toggle_requested.store(true, Ordering::SeqCst);
+                    }
                 }
                 Task::none()
             }
             
             Message::HotkeyPressed => {
                 tracing::info!("Global hotkey pressed: Super+Space");
-                // TODO: Toggle window visibility 
                 Task::none()
             }
             

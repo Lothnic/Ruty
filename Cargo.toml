@@ -41,6 +41,13 @@ dirs = "5"
 # Unix Signals (for Wayland hotkey workaround)
 signal-hook = "0.3"
 
+# gRPC for daemon IPC (Gauntlet-style)
+tonic = "0.12"
+prost = "0.13"
+
+[build-dependencies]
+tonic-build = "0.12"
+
 [features]
 default = []
 
