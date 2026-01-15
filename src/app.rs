@@ -221,11 +221,21 @@ impl Ruty {
                 Task::none()
             }
             Message::Tick => {
-                // Check if hotkey was pressed during this tick
+                // Check for IPC toggle command (from "ruty toggle" CLI)
+                if crate::ipc::check_toggle_requested() {
+                    tracing::info!("IPC toggle command received - exiting");
+                    std::process::exit(0);
+                }
+                
+                // Check for IPC close command
+                if crate::ipc::check_close_requested() {
+                    tracing::info!("IPC close command received - exiting");
+                    std::process::exit(0);
+                }
+                
+                // Check if hotkey was pressed (X11 or SIGUSR1)
                 if hotkey::check_hotkey_pressed() {
-                    tracing::info!("Hotkey detected - exiting app (keybind will restart)");
-                    // On Wayland, window commands don't work reliably
-                    // Just exit the process - the toggle script will restart if needed
+                    tracing::info!("Hotkey detected - exiting app");
                     std::process::exit(0);
                 }
                 Task::none()
