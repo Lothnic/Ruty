@@ -44,6 +44,7 @@ signal-hook = "0.3"
 # gRPC for daemon IPC (Gauntlet-style)
 tonic = "0.12"
 prost = "0.13"
+uuid = { version = "1.19.0", features = ["v4"] }
 
 [build-dependencies]
 tonic-build = "0.12"

@@ -16,6 +16,7 @@ mod native;
 mod hotkey;
 mod ipc;
 mod rpc;
+mod commands;
 
 use std::sync::Arc;
 use app::Ruty;

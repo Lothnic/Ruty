@@ -6,9 +6,10 @@ use iced::widget::{container, text_input, column, row, text, scrollable, Space, 
 use iced::{Element, Length, Theme, Subscription, keyboard, Event, Task, Border, Background, Color, Padding, window};
 use iced::keyboard::Key;
 
-use crate::backend::api::BackendClient;
+use crate::backend::api::{BackendClient, ChatRequest};
 use crate::native::apps::AppIndexer;
 use crate::hotkey;
+use crate::commands::Command;
 
 // ============================================================================
 // Theme Colors (Raycast/Gauntlet inspired)
@@ -73,6 +74,7 @@ pub struct Ruty {
     backend: BackendClient,
     app_indexer: AppIndexer,
     visible: bool,
+    session_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -102,9 +104,10 @@ impl Default for Ruty {
             mode: UIMode::Search,
             loading: false,
             ai_response: String::new(),
-            backend: BackendClient::new("http://127.0.0.1:3847"),
+            backend: BackendClient::new(),
             app_indexer: AppIndexer::new(),
             visible: true,
+            session_id: uuid::Uuid::new_v4().to_string(),
         }
     }
 }
@@ -136,12 +139,108 @@ impl Ruty {
             }
             
             Message::PromptSubmit => {
-                if self.results.is_empty() && !self.prompt.is_empty() {
-                    self.send_to_ai();
-                } else if !self.results.is_empty() {
-                    self.execute_selected();
+                let prompt = self.prompt.clone();
+                
+                if prompt.is_empty() {
+                    return Task::none();
                 }
-                Task::none()
+                
+                // Parse command
+                match Command::parse(&prompt) {
+                    Command::Context { path } => {
+                        self.loading = true;
+                        self.mode = UIMode::Chat;
+                        let backend = self.backend.clone();
+                        let session_id = self.session_id.clone();
+                        return Task::perform(
+                            async move {
+                                backend.load_context(&session_id, &path).await
+                            },
+                            |result| match result {
+                                Ok(resp) => Message::AIResponseChunk(resp.message),
+                                Err(e) => Message::AIError(e),
+                            }
+                        ).chain(Task::done(Message::AIResponseComplete));
+                    }
+                    Command::Clear => {
+                        self.prompt.clear();
+                        self.ai_response.clear();
+                        self.results.clear();
+                        self.mode = UIMode::Search;
+                        return Task::none();
+                    }
+                    Command::Providers { provider, model } => {
+                        if provider.is_some() {
+                            // Update provider
+                            self.ai_response = "Provider switching not yet implemented".to_string();
+                            self.mode = UIMode::Chat;
+                        } else {
+                            // List providers
+                            self.loading = true;
+                            self.mode = UIMode::Chat;
+                            let backend = self.backend.clone();
+                            return Task::perform(
+                                async move {
+                                    backend.get_providers().await
+                                },
+                                |result| match result {
+                                    Ok(resp) => {
+                                        let provider_list = resp.providers.iter()
+                                            .map(|p| format!("• {} ({})", p.display_name, p.models.join(", ")))
+                                            .collect::<Vec<_>>()
+                                            .join("\n");
+                                        Message::AIResponseChunk(format!(
+                                            "Available Providers:\n{}\n\nCurrent: {} / {}",
+                                            provider_list, resp.current_provider, resp.current_model
+                                        ))
+                                    }
+                                    Err(e) => Message::AIError(e),
+                                }
+                            ).chain(Task::done(Message::AIResponseComplete));
+                        }
+                        return Task::none();
+                    }
+                    Command::Help => {
+                        self.ai_response = Command::help_text().to_string();
+                        self.mode = UIMode::Chat;
+                        return Task::none();
+                    }
+                    Command::Settings => {
+                        self.ai_response = "Settings not yet implemented".to_string();
+                        self.mode = UIMode::Chat;
+                        return Task::none();
+                    }
+                    Command::Chat { message } => {
+                        // Regular chat - send to AI
+                        if !self.results.is_empty() {
+                            // If there are search results, execute selected instead
+                            self.execute_selected();
+                            return Task::none();
+                        }
+                        
+                        self.loading = true;
+                        self.ai_response.clear();
+                        self.mode = UIMode::Chat;
+                        
+                        let backend = self.backend.clone();
+                        let session_id = self.session_id.clone();
+                        return Task::perform(
+                            async move {
+                                let request = ChatRequest {
+                                    message,
+                                    session_id,
+                                    local_context: None,
+                                    api_keys: None,
+                                };
+                                backend.chat(request).await
+                            },
+                            |result| match result {
+                                Ok(resp) => Message::AIResponseChunk(resp.response),
+                                Err(e) => Message::AIError(e),
+                            }
+                        ).chain(Task::done(Message::AIResponseComplete));
+                    }
+                }
             }
             
             Message::SelectNext => {
