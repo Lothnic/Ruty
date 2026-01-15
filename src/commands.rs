@@ -5,6 +5,8 @@
 /// Parsed command from user input
 #[derive(Debug, Clone)]
 pub enum Command {
+    /// Search and launch apps: /app <query>
+    App { query: String },
     /// Load local files as context: /context <path>
     Context { path: String },
     /// Clear conversation: /clear
@@ -18,7 +20,7 @@ pub enum Command {
     Settings,
     /// Show help: /help
     Help,
-    /// Not a command, regular chat message
+    /// Not a command, regular chat message (default - AI)
     Chat { message: String },
 }
 
@@ -36,6 +38,15 @@ impl Command {
         let args = parts.get(1).map(|s| s.trim()).unwrap_or("");
         
         match cmd.as_str() {
+            "/app" | "/a" => {
+                if args.is_empty() {
+                    Command::Chat { 
+                        message: "Usage: /app <query>".to_string() 
+                    }
+                } else {
+                    Command::App { query: args.to_string() }
+                }
+            }
             "/context" | "/ctx" | "/c" => {
                 if args.is_empty() {
                     Command::Chat { 
@@ -64,12 +75,14 @@ impl Command {
     /// Get help text for all commands
     pub fn help_text() -> &'static str {
         r#"Available Commands:
+/app <query>     - Search and launch applications (default: AI)
 /context <path>  - Load local files as context
 /clear           - Clear conversation history
 /providers       - Show available providers
-/providers <name> <model> - Switch provider
 /settings        - Open settings
-/help            - Show this help"#
+/help            - Show this help
+
+Tip: Just type your question to chat with AI!"#
     }
 }
 

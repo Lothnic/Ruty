@@ -126,13 +126,17 @@ impl Ruty {
             Message::PromptChanged(new_prompt) => {
                 self.prompt = new_prompt.clone();
                 
-                if new_prompt.starts_with('/') {
-                    self.handle_command(&new_prompt);
-                } else if !new_prompt.is_empty() {
-                    self.search(&new_prompt);
-                } else {
+                // Clear results when prompt is empty
+                if new_prompt.is_empty() {
                     self.results.clear();
                     self.mode = UIMode::Search;
+                }
+                // Only show results preview for /app command
+                else if new_prompt.starts_with("/app ") {
+                    let query = new_prompt.strip_prefix("/app ").unwrap_or("");
+                    if !query.is_empty() {
+                        self.search(query);
+                    }
                 }
                 
                 Task::none()
@@ -147,6 +151,12 @@ impl Ruty {
                 
                 // Parse command
                 match Command::parse(&prompt) {
+                    Command::App { query } => {
+                        // Search for apps and switch to results mode
+                        self.search(&query);
+                        self.mode = UIMode::Results;
+                        return Task::none();
+                    }
                     Command::Context { path } => {
                         self.loading = true;
                         self.mode = UIMode::Chat;
