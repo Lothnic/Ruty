@@ -70,7 +70,9 @@ pub struct Ruty {
     selected_index: usize,
     mode: UIMode,
     loading: bool,
+    ai_status: String,
     ai_response: String,
+    tools_used: Vec<String>,
     backend: BackendClient,
     app_indexer: AppIndexer,
     visible: bool,
@@ -87,6 +89,7 @@ pub enum Message {
     Escape,
     SearchComplete(Vec<SearchResult>),
     AIResponseChunk(String),
+    AIResponseWithTools { response: String, tools: Vec<String> },
     AIResponseComplete,
     AIError(String),
     Tick,
@@ -103,7 +106,9 @@ impl Default for Ruty {
             selected_index: 0,
             mode: UIMode::Search,
             loading: false,
+            ai_status: String::new(),
             ai_response: String::new(),
+            tools_used: Vec::new(),
             backend: BackendClient::new(),
             app_indexer: AppIndexer::new(),
             visible: true,
@@ -229,7 +234,9 @@ impl Ruty {
                         }
                         
                         self.loading = true;
+                        self.ai_status = "🤔 Thinking...".to_string();
                         self.ai_response.clear();
+                        self.tools_used.clear();
                         self.mode = UIMode::Chat;
                         
                         let backend = self.backend.clone();
@@ -245,7 +252,10 @@ impl Ruty {
                                 backend.chat(request).await
                             },
                             |result| match result {
-                                Ok(resp) => Message::AIResponseChunk(resp.response),
+                                Ok(resp) => Message::AIResponseWithTools {
+                                    response: resp.response,
+                                    tools: resp.tools_used,
+                                },
                                 Err(e) => Message::AIError(e),
                             }
                         ).chain(Task::done(Message::AIResponseComplete));
@@ -298,6 +308,29 @@ impl Ruty {
             
             Message::AIResponseChunk(chunk) => {
                 self.ai_response.push_str(&chunk);
+                Task::none()
+            }
+            
+            Message::AIResponseWithTools { response, tools } => {
+                self.ai_response = response;
+                self.tools_used = tools.clone();
+                
+                // Format tools used for status
+                if !tools.is_empty() {
+                    let tool_icons = tools.iter().map(|t| {
+                        match t.as_str() {
+                            "search_memory" | "query_supermemory" => "🔍 Searched memory",
+                            "add_memory" => "💾 Saved to memory",
+                            "open_url" | "open_browser" => "🌐 Opened browser",
+                            "run_shell" | "run_command" => "⚙️ Ran command",
+                            "get_system_info" => "💻 Got system info",
+                            _ => "🔧 Used tool",
+                        }
+                    }).collect::<Vec<_>>().join(", ");
+                    self.ai_status = tool_icons;
+                } else {
+                    self.ai_status.clear();
+                }
                 Task::none()
             }
             
@@ -448,6 +481,15 @@ impl Ruty {
                 .into()
             }
             UIMode::Chat => {
+                // Status line (thinking, tools used)
+                let status_text = if self.loading {
+                    text(&self.ai_status).size(13).color(colors::TEXT_MUTED)
+                } else if !self.ai_status.is_empty() {
+                    text(&self.ai_status).size(13).color(colors::PRIMARY)
+                } else {
+                    text("").size(13)
+                };
+                
                 let response_view = container(
                     scrollable(
                         container(
@@ -469,7 +511,9 @@ impl Ruty {
                 
                 column![
                     search_bar,
-                    Space::with_height(12),
+                    Space::with_height(8),
+                    status_text,
+                    Space::with_height(4),
                     response_view
                 ]
                 .spacing(0)
