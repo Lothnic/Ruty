@@ -76,6 +76,7 @@ pub struct Ruty {
     backend: BackendClient,
     app_indexer: AppIndexer,
     visible: bool,
+    focused: bool,
     session_id: String,
 }
 
@@ -112,6 +113,7 @@ impl Default for Ruty {
             backend: BackendClient::new(),
             app_indexer: AppIndexer::new(),
             visible: true,
+            focused: true,
             session_id: uuid::Uuid::new_v4().to_string(),
         }
     }
@@ -361,7 +363,11 @@ impl Ruty {
                             _ => {}
                         }
                     }
+                    Event::Window(window::Event::Focused) => {
+                        self.focused = true;
+                    }
                     Event::Window(window::Event::Unfocused) => {
+                        self.focused = false;
                         return self.update(Message::WindowFocusLost);
                     }
                     _ => {}
@@ -387,11 +393,15 @@ impl Ruty {
                         // Toggle window visibility using resize (Wayland doesn't support move_to)
                         return if visible {
                             // Show: resize to full size and try to bring to front
+                            // Show: resize to full size and try to bring to front
                             window::get_oldest().and_then(|id| {
                                 Task::batch([
+                                    // Reset level to force WM to re-evaluate
+                                    window::change_level(id, window::Level::Normal), 
                                     window::resize(id, iced::Size::new(700.0, 400.0)),
                                     window::gain_focus(id),
                                     window::request_user_attention(id, Some(window::UserAttention::Critical)),
+                                    // Set AlwaysOnTop LAST (and after a level reset) to be aggressive
                                     window::change_level(id, window::Level::AlwaysOnTop),
                                 ])
                             })
@@ -408,12 +418,26 @@ impl Ruty {
                 }
                 
                 // Check if hotkey was pressed (X11 or SIGUSR1)
+                // Check if hotkey was pressed (X11 or SIGUSR1)
                 if hotkey::check_hotkey_pressed() {
-                    tracing::info!("Hotkey detected - toggling window");
+                    tracing::info!("Hotkey detected - smart toggling window");
                     if let Some(controller) = crate::get_window_controller() {
                         use std::sync::atomic::Ordering;
-                        let current = controller.visible.load(Ordering::SeqCst);
-                        controller.visible.store(!current, Ordering::SeqCst);
+                        
+                        // Smart Toggle Logic:
+                        // If window is FOCUSED, then Hide.
+                        // If window is HIDDEN or NOT FOCUSED, then Show.
+                        let should_show = !self.focused;
+                        
+                        controller.visible.store(should_show, Ordering::SeqCst);
+                        
+                        // We set toggle_requested to true to trigger the actual window update in the block above
+                        // But wait, the block above (lines 383+) runs on toggle_requested.
+                        // We need to ensure it runs with the NEW visibility state.
+                        // Since we just set 'visible', we can set toggle_requested=true and it will be picked up
+                        // in the NEXT tick (or we can handle it now if we refactor).
+                        // For simplicity, we'll let the next tick handle it, BUT we need to ensure the logic matches.
+                        
                         controller.toggle_requested.store(true, Ordering::SeqCst);
                     }
                 }
