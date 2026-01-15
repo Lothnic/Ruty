@@ -236,16 +236,19 @@ impl Ruty {
                         let visible = controller.visible.load(Ordering::SeqCst);
                         tracing::info!("Window visibility change via RPC: {}", visible);
                         
-                        // Toggle window visibility by moving it on/off screen
+                        // Toggle window visibility using resize (Wayland doesn't support move_to)
                         return if visible {
-                            // Move to center of screen (approximate)
+                            // Show: resize to full size and bring to front
                             window::get_oldest().and_then(|id| {
-                                window::move_to(id, iced::Point::new(500.0, 300.0))
+                                Task::batch([
+                                    window::resize(id, iced::Size::new(700.0, 400.0)),
+                                    window::gain_focus(id),
+                                ])
                             })
                         } else {
-                            // Move off-screen
+                            // Hide: shrink to minimal size
                             window::get_oldest().and_then(|id| {
-                                window::move_to(id, iced::Point::new(-9999.0, -9999.0))
+                                window::resize(id, iced::Size::new(1.0, 1.0))
                             })
                         };
                     }
