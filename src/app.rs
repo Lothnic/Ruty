@@ -346,19 +346,25 @@ impl Ruty {
             }
             
             Message::IcedEvent(event) => {
-                if let Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) = event {
-                    match key {
-                        Key::Named(keyboard::key::Named::ArrowDown) => {
-                            return self.update(Message::SelectNext);
+                match event {
+                    Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) => {
+                        match key {
+                            Key::Named(keyboard::key::Named::ArrowDown) => {
+                                return self.update(Message::SelectNext);
+                            }
+                            Key::Named(keyboard::key::Named::ArrowUp) => {
+                                return self.update(Message::SelectPrevious);
+                            }
+                            Key::Named(keyboard::key::Named::Escape) => {
+                                return self.update(Message::Escape);
+                            }
+                            _ => {}
                         }
-                        Key::Named(keyboard::key::Named::ArrowUp) => {
-                            return self.update(Message::SelectPrevious);
-                        }
-                        Key::Named(keyboard::key::Named::Escape) => {
-                            return self.update(Message::Escape);
-                        }
-                        _ => {}
                     }
+                    Event::Window(window::Event::Unfocused) => {
+                        return self.update(Message::WindowFocusLost);
+                    }
+                    _ => {}
                 }
                 Task::none()
             }
@@ -420,7 +426,21 @@ impl Ruty {
             }
             
             Message::WindowFocusLost => {
-                // TODO: Auto-hide window
+                if let Some(controller) = crate::get_window_controller() {
+                    use std::sync::atomic::Ordering;
+                    // Update controller state if currently visible
+                    if controller.visible.load(Ordering::SeqCst) {
+                        tracing::info!("Focus lost - auto-hiding window");
+                        controller.visible.store(false, Ordering::SeqCst);
+                        
+                        return window::get_oldest().and_then(|id| {
+                            Task::batch([
+                                window::resize(id, iced::Size::new(1.0, 1.0)),
+                                window::change_level(id, window::Level::Normal),
+                            ])
+                        });
+                    }
+                }
                 Task::none()
             }
         }
