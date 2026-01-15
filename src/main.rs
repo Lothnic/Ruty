@@ -137,6 +137,22 @@ fn start_daemon() -> iced::Result {
 
     tracing::info!("Starting Ruty daemon...");
 
+    // Start Python backend sidecar
+    println!("🚀 Starting bundled Python backend...");
+    let mut sidecar = backend::sidecar::Sidecar::new()
+        .with_project_dir(std::env::current_dir().unwrap_or_default());
+    
+    match sidecar.start() {
+        Ok(()) => println!("🐍 Python backend started (Sidecar)"),
+        Err(e) => {
+            println!("⚠️  Backend start failed: {} (AI features may not work)", e);
+            tracing::warn!("Failed to start Python backend: {}", e);
+        }
+    }
+    
+    // Keep sidecar alive by leaking it (it will be cleaned up on process exit)
+    Box::leak(Box::new(sidecar));
+
     // Create shared window controller
     let controller = Arc::new(WindowController::new());
     WINDOW_CONTROLLER.set(controller.clone()).expect("Controller already set");
