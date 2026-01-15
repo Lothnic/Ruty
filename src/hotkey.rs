@@ -80,5 +80,6 @@ pub struct HotkeyTick;
 
 /// Create a time-based subscription that fires tick events for hotkey polling
 pub fn hotkey_tick_subscription() -> Subscription<HotkeyTick> {
-    time::every(Duration::from_millis(50)).map(|_| HotkeyTick)
+    // 200ms interval for minimal CPU/disk activity while still feeling responsive
+    time::every(Duration::from_millis(200)).map(|_| HotkeyTick)
 }
